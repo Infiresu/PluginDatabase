@@ -66,16 +66,38 @@ jobs:
             exit 0
           fi
 
-          marker_sha=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate \
-            --jq '[.[] | select(.body | test("build-gate-sha: ")) | .body] | last // empty' \
-            | grep -oE 'build-gate-sha: [0-9a-f]{40}' | tail -n1 | awk '{print $2}' || true)
+          close_comment=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate \
+            --jq '[.[] | select(.body | test("closed because the plugin failed to build"))] | last // empty')
 
-          if [[ -z "$marker_sha" ]]; then
+          if [[ -z "$close_comment" ]]; then
             gh pr comment "$PR_NUMBER" --repo "$REPO" --body "This pull request wasn't closed by the automated build check, so it can't be reopened this way."
             exit 0
           fi
 
-          if [[ "$marker_sha" == "$head_sha" ]]; then
+          marker_sha=$(echo "$close_comment" | jq -r '.body' \
+            | grep -oE 'build-gate-sha: [0-9a-f]{40}' | tail -n1 | awk '{print $2}' || true)
+
+          if [[ -n "$marker_sha" ]]; then
+            # Modern close comments record the exact failing SHA, so compare precisely.
+            if [[ "$marker_sha" == "$head_sha" ]]; then
+              changed=false
+            else
+              changed=true
+            fi
+          else
+            # Older close comments predate the SHA marker, so fall back to timestamps:
+            # has anything been pushed to the branch since this PR was closed?
+            close_time=$(echo "$close_comment" | jq -r '.created_at')
+            commit_time=$(gh api "repos/$REPO/commits/$head_sha" --jq '.commit.committer.date')
+
+            if [[ "$commit_time" > "$close_time" ]]; then
+              changed=true
+            else
+              changed=false
+            fi
+          fi
+
+          if [[ "$changed" != "true" ]]; then
             gh pr comment "$PR_NUMBER" --repo "$REPO" --body "No changes have been pushed since this pull request was closed. Push a fix, then comment \`@millennium-bot[bot] reopen\` again."
             exit 0
           fi
