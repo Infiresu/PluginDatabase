@@ -16,8 +16,9 @@ jobs:
   handle-failed-build:
     runs-on: ubuntu-latest
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'failure')
+      github.repository == 'SteamClientHomebrew/PluginDatabase' &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'failure'))
     permissions:
       pull-requests: write
     steps:
